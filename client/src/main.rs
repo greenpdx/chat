@@ -2,6 +2,7 @@ use protocol::{Reply, Request};
 use std::borrow::Cow;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::net::TcpStream;
+use serde_json::{json, Value};
 
 fn main() -> io::Result<()> {
     let addr = "127.0.0.1:9999";
@@ -62,7 +63,7 @@ fn parse_input(command: String) -> Result<Request, Cow<'static, str>> {
                 .into());
         }
 
-        Some(&"subscribe") => {
+        Some(&"sub") => {
             if words.len() != 2 {
                 return Err("Usage: subscribe CHANNEL".into());
             }
@@ -79,6 +80,22 @@ fn parse_input(command: String) -> Result<Request, Cow<'static, str>> {
                 channel: words[1].to_string(),
                 message: words[2..].join(" "),
             })
+        }
+        Some(&"count") => {
+            if words.len() != 1 {
+                return Err("Usage: subscribe CHANNEL".into());
+            }
+
+            Ok(Request::Count())
+        }
+        Some(&"ctrl") => {
+            if words.len() < 2 {
+                return Err("Usage: ctrl CHANNEL".into());
+            }
+            println!("{:?}", words );
+            
+            let jrtn = json!(words[1]);
+            Ok(Request::Control(jrtn))
         }
         Some(other) => {
             return Err(format!("Unrecognized command: {}", other).into());

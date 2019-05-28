@@ -1,6 +1,7 @@
 #![feature(async_await, await_macro)]
 
 mod lines;
+mod control;
 
 use futures::executor::{self, ThreadPool};
 use futures::future::join_all;
@@ -9,29 +10,18 @@ use futures::lock::Mutex;
 use futures::prelude::*;
 use futures::task::SpawnExt;
 use lines::Lines;
+use control::{Channel, ChannelMap, Outbound, control};
 use protocol::{Reply, Request};
 use romio::{TcpListener, TcpStream};
-use std::collections::HashMap;
+// use std::collections::HashMap;
 use std::collections::HashSet;
 use std::io;
-use std::marker::Unpin;
+// use std::marker::Unpin;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
-
-/// A connection to a client, to which we can write serialized `Reply` objects.
-#[derive(Clone, Debug)]
-struct Outbound(Arc<Mutex<Box<dyn 'static + AsyncWrite + Send + Unpin>>>);
-
-#[derive(Default, Debug)]
-struct Channel {
-    subscribers: HashMap<SocketAddr, Outbound>,
-}
-
-#[derive(Default, Debug)]
-struct ChannelMap {
-    channels: HashMap<String, Channel>,
-}
+// use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 fn main() -> io::Result<()> {
     executor::block_on(async {
@@ -75,6 +65,7 @@ async fn handle_client(stream: TcpStream, channel_map: Arc<Mutex<ChannelMap>>) -
 
     let mut lines = Lines::new(inbound);
     while let Some(line) = await!(lines.next()) {
+        println!("{:?}",line );
         match serde_json::de::from_reader(line?.as_bytes())? {
             Request::Subscribe(name) => {
                 let mut map = await!(channel_map.lock());
@@ -85,6 +76,13 @@ async fn handle_client(stream: TcpStream, channel_map: Arc<Mutex<ChannelMap>>) -
                 channel.subscribers.insert(peer_addr.clone(), outbound.clone());
                 subscriptions.insert(name.clone());
                 await!(send_reply(&outbound, Reply::Subscribed(name)))?;
+            }
+            Request::Count() => {
+                await!(send_reply(&outbound, Reply::Count(subscriptions.len())));
+            }
+            Request::Control(cmd) => {
+                let rslt = await!(control(cmd, &stream, &channel_map));    // return serde_json::Value
+                await!(send_reply(&outbound, Reply::Control(rslt)));
             }
             Request::Send {
                 channel: name,
